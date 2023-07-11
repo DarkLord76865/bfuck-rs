@@ -1,0 +1,244 @@
+name: Release
+
+on: workflow_dispatch
+
+permissions:
+  contents: write
+  discussions: write
+  packages: read
+
+jobs:
+  build-linux:
+    name: Build Linux binary
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Update Rust
+      run: rustup update
+
+    - name: Build binary
+      run: cargo build --release --target x86_64-unknown-linux-gnu
+
+    - name: Get name and version
+      shell: bash
+      id: get_info
+      run: |
+        INFO_STR=$(cargo run --release -- --version)
+        INFO_ARR=($INFO_STR)
+        NAME=${INFO_ARR[0]}
+        VERSION=${INFO_ARR[1]}
+        echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: test
+      run: |
+        ls -la
+        exit 1
+
+    - name: ZIP binary
+      uses: thedoctor0/zip-release@0.7.1
+      with:
+        type: zip
+        filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
+        path: target/release/${{ steps.get_info.outputs.NAME }}
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: linux-binary
+        retention-days: 3
+        path: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
+
+  build-macos:
+    name: Build macOS binary
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Update Rust
+      run: rustup update
+
+    - name: Build binary
+      run: cargo build --release --target x86_64-apple-darwin
+
+    - name: Get name and version
+      shell: bash
+      id: get_info
+      run: |
+        INFO_STR=$(cargo run --release -- --version)
+        INFO_ARR=($INFO_STR)
+        NAME=${INFO_ARR[0]}
+        VERSION=${INFO_ARR[1]}
+        echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: test
+      run: |
+        ls -la
+        exit 1
+
+    - name: ZIP binary
+      uses: thedoctor0/zip-release@0.7.1
+      with:
+        type: zip
+        filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
+        path: target/release/${{ steps.get_info.outputs.NAME }}
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: macos-binary
+        retention-days: 3
+        path: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
+
+  build-windows:
+    name: Build Windows binary
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Update Rust
+        run: rustup update
+
+      - name: Build binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Get name and version
+        shell: bash
+        id: get_info
+        run: |
+          INFO_STR=$(cargo run --release -- --version)
+          INFO_ARR=($INFO_STR)
+          NAME=${INFO_ARR[0]}
+          VERSION=${INFO_ARR[1]}
+          echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+          echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: test
+        run: |
+          ls -la
+          exit 1
+
+      - name: ZIP binary
+        uses: thedoctor0/zip-release@0.7.1
+        with:
+          type: zip
+          filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
+          path: target/release/${{ steps.get_info.outputs.NAME }}.exe
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-binary
+          retention-days: 3
+          path: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
+
+  publish-release:
+    name: Publish GitHub release
+    runs-on: ubuntu-latest
+    needs:
+      [build-linux, build-macos, build-windows]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Get name and version
+      shell: bash
+      id: get_info
+      run: |
+        INFO_STR=$(cargo run --release -- --version)
+        INFO_ARR=($INFO_STR)
+        NAME=${INFO_ARR[0]}
+        VERSION=${INFO_ARR[1]}
+        echo "NAME=${NAME}" >> $GITHUB_OUTPUT
+        echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
+
+    - name: Download Linux binary
+      uses: actions/download-artifact@v3
+      with:
+        name: linux-binary
+        path: .
+
+    - name: Download macOS binary
+      uses: actions/download-artifact@v3
+      with:
+          name: macos-binary
+          path: .
+
+    - name: Download Windows binary
+      uses: actions/download-artifact@v3
+      with:
+          name: windows-binary
+          path: .
+
+    - uses: mukunku/tag-exists-action@v1.2.0
+      name: Check if this version was already released
+      id: checkTag
+      with:
+        tag: 'v${{ steps.get_info.outputs.VERSION }}'
+
+    - name: Terminate if this version was already released
+      if: steps.checkTag.outputs.exists == 'true'
+      run: |
+        echo "v${{ steps.get_version.outputs.VERSION_NUM }} was already released!" >&2
+        exit 1
+
+    - name: VirusTotal Scan
+      uses: crazy-max/ghaction-virustotal@v3.2.0
+      id: vt_scan
+      with:
+        vt_api_key: ${{ secrets.VT_API_KEY }}
+        request_rate: 1
+        files: |
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
+
+    - name: VirusTotal Scan Results
+      shell: bash
+      id: vt_results
+      run: |
+        RESULTS_STRING="[VirusTotal](https://www.virustotal.com/) analysis:"$'\n'
+        IFS=',' read -r -a array <<< "${{ steps.vt_scan.outputs.analysis }}"
+        for element in "${array[@]}"
+        do
+          IFS='=' read -r -a array2 <<< "$element"
+          RESULTS_STRING+="- [${array2[0]}](${array2[1]}==/detection)"$'\n'
+        done
+        echo "${RESULTS_STRING}"
+        EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+        echo "RESULTS<<$EOF" >> "$GITHUB_OUTPUT"
+        echo "${RESULTS_STRING}" >> "$GITHUB_OUTPUT"
+        echo "$EOF" >> "$GITHUB_OUTPUT"
+
+    - name: Show info
+      run: |
+        echo "${{ steps.get_info.outputs.NAME }}"
+        echo "${{ steps.get_info.outputs.VERSION }}"
+        echo "${{ steps.vt_results.outputs.RESULTS }}"
+
+    - name: Create release
+      uses: softprops/action-gh-release@v1
+      with:
+        body: |
+          ### **_${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}_**
+          
+          ${{ steps.vt_results.outputs.RESULTS }}
+        draft: false
+        prerelease: false
+        files: |
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
+          ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
+        name: v${{ steps.get_info.outputs.VERSION }}
+        tag_name: v${{ steps.get_info.outputs.VERSION }}
+        fail_on_unmatched_files: true
+        token: ${{ secrets.GITHUB_TOKEN }}
