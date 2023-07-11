@@ -26,27 +26,19 @@ jobs:
       shell: bash
       id: get_info
       run: |
-        INFO_STR=$(cargo run --release -- --version)
+        INFO_STR=$(cargo run -- --version)
         INFO_ARR=($INFO_STR)
         NAME=${INFO_ARR[0]}
         VERSION=${INFO_ARR[1]}
         echo "NAME=${NAME}" >> $GITHUB_OUTPUT
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-    - shell: bash
-      run: |
-        cd target
-        ls -la
-        cd x86_64-unknown-linux-gnu
-        ls -la
-        exit 1
-
     - name: ZIP binary
       uses: thedoctor0/zip-release@0.7.1
       with:
         type: zip
         filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
-        path: target/release/${{ steps.get_info.outputs.NAME }}
+        path: target/x86_64-unknown-linux-gnu/release/${{ steps.get_info.outputs.NAME }}
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v3
@@ -73,27 +65,19 @@ jobs:
       shell: bash
       id: get_info
       run: |
-        INFO_STR=$(cargo run --release -- --version)
+        INFO_STR=$(cargo run -- --version)
         INFO_ARR=($INFO_STR)
         NAME=${INFO_ARR[0]}
         VERSION=${INFO_ARR[1]}
         echo "NAME=${NAME}" >> $GITHUB_OUTPUT
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-    - shell: bash
-      run: |
-        cd target
-        ls -la
-        cd x86_64-apple-darwin
-        ls -la
-        exit 1
-
     - name: ZIP binary
       uses: thedoctor0/zip-release@0.7.1
       with:
         type: zip
         filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
-        path: target/release/${{ steps.get_info.outputs.NAME }}
+        path: target/x86_64-apple-darwin/release/${{ steps.get_info.outputs.NAME }}
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v3
@@ -120,7 +104,7 @@ jobs:
         shell: bash
         id: get_info
         run: |
-          INFO_STR=$(cargo run --release -- --version)
+          INFO_STR=$(cargo run -- --version)
           INFO_ARR=($INFO_STR)
           NAME=${INFO_ARR[0]}
           VERSION=${INFO_ARR[1]}
@@ -133,6 +117,8 @@ jobs:
           ls -la
           cd x86_64-pc-windows-msvc
           ls -la
+          cd release
+          ls -la
           exit 1
 
       - name: ZIP binary
@@ -140,7 +126,7 @@ jobs:
         with:
           type: zip
           filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
-          path: target/release/${{ steps.get_info.outputs.NAME }}.exe
+          path: target/x86_64-pc-windows-msvc/release/${{ steps.get_info.outputs.NAME }}.exe
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v3
