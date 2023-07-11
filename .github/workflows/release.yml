@@ -33,11 +33,6 @@ jobs:
         echo "NAME=${NAME}" >> $GITHUB_OUTPUT
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-    - name: test
-      run: |
-        ls -la
-        exit 1
-
     - name: ZIP binary
       uses: thedoctor0/zip-release@0.7.1
       with:
@@ -77,11 +72,6 @@ jobs:
         echo "NAME=${NAME}" >> $GITHUB_OUTPUT
         echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-    - name: test
-      run: |
-        ls -la
-        exit 1
-
     - name: ZIP binary
       uses: thedoctor0/zip-release@0.7.1
       with:
@@ -120,11 +110,6 @@ jobs:
           VERSION=${INFO_ARR[1]}
           echo "NAME=${NAME}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
-
-      - name: test
-        run: |
-          ls -la
-          exit 1
 
       - name: ZIP binary
         uses: thedoctor0/zip-release@0.7.1
