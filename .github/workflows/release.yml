@@ -111,16 +111,6 @@ jobs:
           echo "NAME=${NAME}" >> $GITHUB_OUTPUT
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
 
-      - shell: bash
-        run: |
-          cd target
-          ls -la
-          cd x86_64-pc-windows-msvc
-          ls -la
-          cd release
-          ls -la
-          exit 1
-
       - name: ZIP binary
         uses: thedoctor0/zip-release@0.7.1
         with:
@@ -149,7 +139,7 @@ jobs:
       shell: bash
       id: get_info
       run: |
-        INFO_STR=$(cargo run --release -- --version)
+        INFO_STR=$(cargo run -- --version)
         INFO_ARR=($INFO_STR)
         NAME=${INFO_ARR[0]}
         VERSION=${INFO_ARR[1]}
