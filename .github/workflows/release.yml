@@ -38,7 +38,12 @@ jobs:
       with:
         type: zip
         filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip
-        path: target/x86_64-unknown-linux-gnu/release/${{ steps.get_info.outputs.NAME }}
+        directory: target/x86_64-unknown-linux-gnu/release/
+        path: ${{ steps.get_info.outputs.NAME }}
+
+    - name: Move ZIP to root
+      shell: bash
+      run: mv "target/x86_64-unknown-linux-gnu/release/${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip" "${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-linux-x86_64.zip"
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v3
@@ -77,7 +82,12 @@ jobs:
       with:
         type: zip
         filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip
-        path: target/x86_64-apple-darwin/release/${{ steps.get_info.outputs.NAME }}
+        directory: target/x86_64-apple-darwin/release/
+        path: ${{ steps.get_info.outputs.NAME }}
+
+    - name: Move ZIP to root
+      shell: bash
+      run: mv "target/x86_64-apple-darwin/release/${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip" "${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-apple-darwin-x86_64.zip"
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v3
@@ -116,7 +126,12 @@ jobs:
         with:
           type: zip
           filename: ${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip
-          path: target/x86_64-pc-windows-msvc/release/${{ steps.get_info.outputs.NAME }}.exe
+          directory: target/x86_64-pc-windows-msvc/release/
+          path: ${{ steps.get_info.outputs.NAME }}.exe
+
+      - name: Move ZIP to root
+        shell: bash
+        run: mv "target/x86_64-pc-windows-msvc/release/${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip" "${{ steps.get_info.outputs.NAME }}-v${{ steps.get_info.outputs.VERSION }}-windows-x86_64.zip"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v3
