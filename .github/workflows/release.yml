@@ -37,6 +37,8 @@ jobs:
       run: |
         cd target
         ls -la
+        cd x86_64-unknown-linux-gnu
+        ls -la
         exit 1
 
     - name: ZIP binary
@@ -82,6 +84,8 @@ jobs:
       run: |
         cd target
         ls -la
+        cd x86_64-apple-darwin
+        ls -la
         exit 1
 
     - name: ZIP binary
@@ -126,6 +130,8 @@ jobs:
       - shell: bash
         run: |
           cd target
+          ls -la
+          cd x86_64-pc-windows-msvc
           ls -la
           exit 1
 
