@@ -1,72 +1,56 @@
-use std::io::{self, Read, Write};
-use std::process::exit;
-use std::ptr;
-use std::slice;
-use super::Storage;
+use crate::io::{getchar, putchar};
+use crate::code::{Token, TokenStream, STORAGE_SIZE};
 
+pub fn interpret(token_stream: TokenStream) {
+    let mut ins_ptr = 0;
+    let mut data_ptr = 0;
+    let mut storage = [0_u8; STORAGE_SIZE];
+    let mut loop_stack = Vec::new();
 
-pub fn interpret(brainfuck_code: String) {
-    let mut storage = Storage::default();
-    let mut ptr: usize = 0;
-    let mut ins_ptr: usize = 0;
-    let stdin = io::stdin();
-
-    let brainfuck_commands: Vec<char> = brainfuck_code.chars().collect();
-    let mut loop_stack: Vec<usize> = Vec::new();
-
-    while ins_ptr < brainfuck_commands.len() {
-        match brainfuck_commands[ins_ptr] {
-            '+' => {
-                storage[ptr] = storage[ptr].wrapping_add(1_u8);
-            },
-            '-' => {
-                storage[ptr] = storage[ptr].wrapping_add_signed(-1_i8);
-            },
-            '>' => {
-                ptr += 1;
-            },
-            '<' => {
-                if ptr == 0 {
-                    eprintln!("Data pointer index out of bounds!");
-                    exit(1);
-                } else {
-                    ptr -= 1;
-                }
-            },
-            '.' => {
-                print!("{}", storage[ptr] as char);
-            },
-            ',' => {
-                io::stdout().flush().unwrap();
-                stdin.lock().read_exact(unsafe {slice::from_raw_parts_mut(ptr::addr_of_mut!(storage[ptr]), 1)}).expect("Error while reading input!");
-            },
-            '[' => {
-                if storage[ptr] != 0 {
-                    loop_stack.push(ins_ptr);
-                } else {
-                    let mut count: usize = 0;
-                    ins_ptr += 1;
-                    while brainfuck_commands[ins_ptr] != ']' || count != 0 {
-                        if brainfuck_commands[ins_ptr] == '[' {
-                            count += 1;
-                        } else if brainfuck_commands[ins_ptr] == ']' {
-                            count -= 1;
-                        }
-                        ins_ptr += 1;
+    while ins_ptr < token_stream.len() {
+        match token_stream[ins_ptr] {
+            Token::Add(n) => storage[data_ptr] = storage[data_ptr].wrapping_add(n),
+            Token::Mov(n) => {
+                let new_data_ptr = data_ptr as isize + n;
+                if n > 0 {
+                    if (new_data_ptr as usize) < STORAGE_SIZE {
+                        data_ptr = new_data_ptr as usize;
+                    } else {
+                        data_ptr = new_data_ptr as usize - STORAGE_SIZE;
                     }
-                }
-            },
-            ']' => {
-                if storage[ptr] != 0 {
-                    ins_ptr = loop_stack[loop_stack.len() - 1];
                 } else {
-                    loop_stack.pop();
+                    #[allow(clippy::collapsible_else_if)]
+                    if new_data_ptr < 0 {
+                        data_ptr = (STORAGE_SIZE as isize + new_data_ptr) as usize;
+                    } else {
+                        data_ptr = new_data_ptr as usize;
+                    }                    
                 }
             },
-            _ => {
-                eprintln!("Unknown command!");
-                exit(1);
-            }
+            Token::Input => storage[data_ptr] = getchar(),
+            Token::Output => putchar(storage[data_ptr]),
+            Token::OpenPar => {
+                if storage[data_ptr] == 0 {  // skip the loop
+                    let mut nested_loops = 1;
+                    while token_stream[ins_ptr] != Token::ClosePar || nested_loops != 0 {
+                        ins_ptr += 1;
+                        match token_stream[ins_ptr] {
+                            Token::OpenPar => nested_loops += 1,
+                            Token::ClosePar => nested_loops -= 1,
+                            _ => (),
+                        }
+                    }
+                } else {
+                    loop_stack.push(ins_ptr);
+                }
+            },
+            Token::ClosePar => {
+                if storage[data_ptr] != 0 {
+                    ins_ptr = *loop_stack.last().unwrap();  // return to the start of the loop
+                } else {
+                    loop_stack.pop();  // remove the loop from the stack, continue to the next instruction
+                }
+            },
         }
         ins_ptr += 1;
     }

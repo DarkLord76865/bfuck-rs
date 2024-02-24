@@ -1,27 +1,28 @@
 [package]
 name = "bfuck"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Antonio Mamić <antoniomamic007@gmail.com>"]
 edition = "2021"
-description = "A simple Brainfuck interpreter and transpiler to Rust"
+description = "A simple Brainfuck interpreter, JIT-compiler and compiler"
 readme = "README.md"
-repository = "https://github.com/DarkLord76865/bfuck-rs"
+repository = "https://github.com/amamic1803/bfuck-rs"
 license = "MIT"
-keywords = ["cli", "interpreter", "transpiler"]
-categories = ["command-line-interface"]
+keywords = ["cli", "interpreter", "jit", "compiler"]
+categories = ["command-line-interface", "compilers"]
 include = [
     "/.cargo",
     "/src",
-    "Cargo.lock",
     "Cargo.toml",
     "LICENSE",
     "README.md",
 ]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-clap = {version = "4.3.11", features = ["cargo"]}
+clap = {version = "4.5.1", features = ["cargo"]}
+cranelift = "0.105.1"
+memmap2 = "0.9.4"
+target-lexicon = "0.12.14"
 
 [profile.release]
 lto = true
