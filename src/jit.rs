@@ -88,14 +88,10 @@ pub fn jit(token_stream: TokenStream) {
                 let ptr_val = builder.use_var(data_ptr);
                 let ptr_plus = builder.ins().iadd_imm(ptr_val, n as i64);
                 
-                let ptr_val = if n >= 0 {
+                let ptr_val = {
                     let wrapped = builder.ins().iadd_imm(ptr_val, n as i64 - STORAGE_SIZE as i64);
                     let cmp = builder.ins().icmp_imm(IntCC::SignedLessThan, ptr_plus, STORAGE_SIZE as i64);
                     builder.ins().select(cmp, ptr_plus, wrapped)
-                } else {
-                    let wrapped = builder.ins().iadd_imm(ptr_val, n as i64 + STORAGE_SIZE as i64);
-                    let cmp = builder.ins().icmp_imm(IntCC::SignedLessThan, wrapped, STORAGE_SIZE as i64);
-                    builder.ins().select(cmp, wrapped, ptr_plus)
                 };
                 
                 builder.def_var(data_ptr, ptr_val);
@@ -118,7 +114,7 @@ pub fn jit(token_stream: TokenStream) {
 
                 builder.ins().call_indirect(write_sig, write_address, &[cell_value]);
             },
-            Token::OpenPar => {
+            Token::OpenBr => {
                 let inner_block = builder.create_block();
                 let after_block = builder.create_block();
 
@@ -133,7 +129,7 @@ pub fn jit(token_stream: TokenStream) {
 
                 stack.push((inner_block, after_block));
             },
-            Token::ClosePar => {
+            Token::CloseBr => {
                 let (inner_block, after_block) = stack.pop().unwrap();
 
                 let ptr_val = builder.use_var(data_ptr);

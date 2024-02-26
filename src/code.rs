@@ -1,52 +1,136 @@
-//! Tokenization and optimization of code.
+//! Process brainfuck code.
 
 
-use std::fmt::Write;
-use std::process::exit;
+
+use crate::Error;
 
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Token {
-    Add(u8),      // +/- (-1 represented using twos complement, here as 255)
-    Mov(isize),  // </> (< represented as -1, > represented as +1)
-    Input,        // ,
-    Output,       // .
-    OpenPar,      // [
-    ClosePar,     // ]
-}
 
-pub type TokenStream = Vec<Token>;
+/// The array size used in the brainfuck program.
 pub const STORAGE_SIZE: usize = 30_000;
 
-pub fn tokenize_code(code: &str) -> TokenStream {
-    let mut tokens = Vec::new();
+/// The processed brainfuck code.
+pub type TokenStream = Vec<Token>;
+
+/// The enum representing a parsed brainfuck command.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Token {
+    /// *Addition*
+    ///
+    /// Add the value (`u8`) to the current cell in the array.
+    ///
+    /// Subtraction is represented as ```Add(255)``` since `n - 1 = n + 255 (mod 256)`.
+    ///
+    /// Adjacent additions are merged.
+    Add(u8),
+
+    /// *Move*
+    ///
+    /// Move (increment) data pointer by the value (`usize`).
+    ///
+    /// Moving in negative direction is represented as ```Mov(STORAGE_SIZE - n)```.
+    ///
+    /// Moves past `0` wrap to `STORAGE_SIZE - 1`, and moves past `STORAGE_SIZE - 1` wrap to `0`.
+    ///
+    /// Adjacent moves are merged.
+    Mov(usize),
+
+    /// *Input*
+    ///
+    /// Read a byte from `stdin` and store it in the current cell in the array.
+    Input,
+
+    /// *Output*
+    ///
+    /// Print the byte at the current cell in the array to the `stdout`.
+    Output,
+    
+    /// *Open bracket*
+    /// 
+    /// The start of the loop.
+    OpenBr,
+    
+    /// *Close bracket*
+    /// 
+    /// The end of the loop.
+    CloseBr,
+}
+
+
+
+/// Process raw brainfuck code into token stream.
+/// # Arguments
+/// `code` - A string slice that holds the Brainfuck code.
+/// # Returns
+/// * [TokenStream] - The generated token stream, if [Ok].
+/// * [Error] - The encountered error, if [Err].
+/// # Errors
+/// * `UnmatchedOpenBr(usize, usize)` - There is an unmatched open bracket at the given line and column.
+/// * `UnmatchedCloseBr(usize, usize)` - There is an unmatched close bracket at the given line and column.
+/// # Example
+/// ```
+/// use bfuck::{process_code, STORAGE_SIZE, Token};
+///
+/// let code = "<<--[-[>++<,.-]]";
+/// let tokens = process_code(code).unwrap();
+///
+/// assert_eq!(tokens, vec![
+///     Token::Mov(STORAGE_SIZE - 2),
+///     Token::Add(u8::MAX - 1),
+///     Token::OpenBr,
+///     Token::Add(u8::MAX),
+///     Token::OpenBr,
+///     Token::Mov(1),
+///     Token::Add(2),
+///     Token::Mov(STORAGE_SIZE - 1),
+///     Token::Input,
+///     Token::Output,
+///     Token::Add(u8::MAX),
+///     Token::CloseBr,
+///     Token::CloseBr,
+/// ]);
+/// ```
+pub fn process_code(code: &str) -> Result<TokenStream, Error> {
+
+    // vector of tokens with their locations (line and column) in the original brainfuck code
+    let mut tokens_with_loc = Vec::new();
+
+    // generate tokens from brainfuck code
     for (i, line) in code.lines().enumerate() {
         for (j, character) in line.chars().enumerate() {
             match character {
-                '+' => tokens.push((Token::Add(1), i + 1, j + 1)),
-                '-' => tokens.push((Token::Add(u8::MAX), i + 1, j + 1)),
-                '<' => tokens.push((Token::Mov(-1), i + 1, j + 1)),
-                '>' => tokens.push((Token::Mov(1), i + 1, j + 1)),
-                ',' => tokens.push((Token::Input, i + 1, j + 1)),
-                '.' => tokens.push((Token::Output, i + 1, j + 1)),
-                '[' => tokens.push((Token::OpenPar, i + 1, j + 1)),
-                ']' => tokens.push((Token::ClosePar, i + 1, j + 1)),
+                '+' => tokens_with_loc.push((Token::Add(1), i + 1, j + 1)),
+                '-' => tokens_with_loc.push((Token::Add(u8::MAX), i + 1, j + 1)),
+                '<' => tokens_with_loc.push((Token::Mov(STORAGE_SIZE - 1), i + 1, j + 1)),
+                '>' => tokens_with_loc.push((Token::Mov(1), i + 1, j + 1)),
+                ',' => tokens_with_loc.push((Token::Input, i + 1, j + 1)),
+                '.' => tokens_with_loc.push((Token::Output, i + 1, j + 1)),
+                '[' => tokens_with_loc.push((Token::OpenBr, i + 1, j + 1)),
+                ']' => tokens_with_loc.push((Token::CloseBr, i + 1, j + 1)),
                 _ => {},  // Ignore all other characters (comments, etc.)
             }
         }
     }
 
-    tokens = optimize_adjacent(tokens);
+    // merge adjacent tokens
+    tokens_with_loc = merge_adjacent(tokens_with_loc);
 
-    if let Err(error_messages) = check_loops(&tokens) {
-        eprintln!("{}", error_messages);
-        exit(1);
-    }
+    // check whether the loops are correct
+    check_loops(&tokens_with_loc)?;
 
-    tokens.into_iter().map(|(token, _, _)| token).collect()
+    // remove location information and return the token stream
+    Ok(tokens_with_loc.into_iter().map(|(token, _, _)| token).collect())
 }
 
-fn optimize_adjacent(tokens: Vec<(Token, usize, usize)>) -> Vec<(Token, usize, usize)> {
+/// Merge adjacent addition and move tokens.
+/// Adjacent addition is merged by adding the values modulo 256.
+/// Adjacent move is merged by adding the values modulo [STORAGE_SIZE].
+/// If the merged value becomes no-op, the token is removed.
+/// # Arguments
+/// `tokens` - A vector of tokens with their locations (line and column) in the original
+/// # Returns
+/// * Vec<([Token], usize, usize)> - The optimized token stream.
+fn merge_adjacent(tokens: Vec<(Token, usize, usize)>) -> Vec<(Token, usize, usize)> {
     let mut optimized_tokens = Vec::new();
 
     for token in tokens.into_iter() {
@@ -63,7 +147,7 @@ fn optimize_adjacent(tokens: Vec<(Token, usize, usize)>) -> Vec<(Token, usize, u
             },
             Some((Token::Mov(n), _, _)) => {
                 if let Token::Mov(m) = token.0 {
-                    *n = (*n + m) % STORAGE_SIZE as isize;
+                    *n = (*n + m) % STORAGE_SIZE;
                     if *n == 0 {
                         optimized_tokens.pop();
                     }
@@ -78,29 +162,31 @@ fn optimize_adjacent(tokens: Vec<(Token, usize, usize)>) -> Vec<(Token, usize, u
     optimized_tokens
 }
 
-fn check_loops(tokens: &[(Token, usize, usize)]) -> Result<(), String> {
+/// Check if the loops are correct (brackets are matched).
+/// # Arguments
+/// `tokens` - A slice of tokens with their locations (line and column) in the original
+/// # Returns
+/// * `()` - If the loops are correct.
+/// * [Error] - If the loops are incorrect.
+/// # Errors
+/// * `UnmatchedOpenBr(usize, usize)` - There is an unmatched open bracket at the given line and column.
+/// * `UnmatchedCloseBr(usize, usize)` - There is an unmatched close bracket at the given line and column.
+fn check_loops(tokens: &[(Token, usize, usize)]) -> Result<(), Error> {
     let mut loop_stack = Vec::new();
-    let mut error_messages = String::new();
 
     for (token, row, col) in tokens.iter() {
         match token {
-            Token::OpenPar => loop_stack.push((row, col)),
-            Token::ClosePar => match loop_stack.pop() {
-                Some(_) => {},
-                None => writeln!(&mut error_messages, "Unmatched ']' at line {} and column {}.", row, col).unwrap(),
+            Token::OpenBr => loop_stack.push((*row, *col)),
+            Token::CloseBr => if loop_stack.pop().is_none() {
+                return Err(Error::UnmatchedCloseBr(*row, *col));
             }
             _ => {},
         }
     }
 
-    for (row, col) in loop_stack {
-        writeln!(&mut error_messages, "Unmatched '[' at line {} and column {}.", row, col).unwrap();
-    }
-
-    if error_messages.is_empty() {
-        Ok(())
-    } else {
-        Err(error_messages.trim().to_owned())
+    match loop_stack.pop() {
+        Some((row, col)) => Err(Error::UnmatchedOpenBr(row, col)),
+        None => Ok(()),
     }
 }
 
@@ -112,23 +198,27 @@ mod tests {
 
     #[test]
     fn test_tokenize_code() {
+        //! Test the process_code function.
+        
         let code = "++[>++<,.-]";
-        let tokens = tokenize_code(code);
+        let tokens = process_code(code).unwrap();
         assert_eq!(tokens, vec![
             Token::Add(2),
-            Token::OpenPar,
+            Token::OpenBr,
             Token::Mov(1),
             Token::Add(2),
-            Token::Mov(-1),
+            Token::Mov(STORAGE_SIZE - 1),
             Token::Input,
             Token::Output,
             Token::Add(u8::MAX),
-            Token::ClosePar,
+            Token::CloseBr,
         ]);
     }
 
     #[test]
-    fn test_optimize_adjacent() {
+    fn test_merge_adjacent() {
+        //! Test the merge_adjacent function.
+        
         let tokens = vec![
             (Token::Add(1), 1, 1),
             (Token::Add(1), 1, 2),
@@ -137,12 +227,42 @@ mod tests {
             (Token::Add(1), 1, 5),
             (Token::Add(255), 1, 6),
             (Token::Mov(1), 1, 7),
-            (Token::Mov(-1), 1, 8),
+            (Token::Mov(STORAGE_SIZE - 1), 1, 8),
         ];
-        let optimized_tokens = optimize_adjacent(tokens);
+        let optimized_tokens = merge_adjacent(tokens);
+
         assert_eq!(optimized_tokens, vec![
             (Token::Add(2), 1, 1),
             (Token::Mov(2), 1, 3),
         ]);
+    }
+
+    #[test]
+    fn test_check_loops() {
+        //! Test the check_loops function.
+        
+        let tokens = vec![
+            (Token::OpenBr, 1, 1),
+            (Token::CloseBr, 1, 2),
+            (Token::OpenBr, 1, 3),
+            (Token::OpenBr, 1, 4),
+            (Token::CloseBr, 1, 5),
+            (Token::CloseBr, 1, 6),
+        ];
+        assert_eq!(check_loops(&tokens), Ok(()));
+
+        let tokens = vec![
+            (Token::OpenBr, 1, 1),
+            (Token::CloseBr, 1, 2),
+            (Token::CloseBr, 1, 3),
+        ];
+        assert_eq!(check_loops(&tokens), Err(Error::UnmatchedCloseBr(1, 3)));
+
+        let tokens = vec![
+            (Token::OpenBr, 1, 1),
+            (Token::OpenBr, 1, 2),
+            (Token::CloseBr, 1, 3),
+        ];
+        assert_eq!(check_loops(&tokens), Err(Error::UnmatchedOpenBr(1, 1)));
     }
 }

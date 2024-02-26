@@ -4,16 +4,9 @@ use std::process::exit;
 
 use clap::{Arg, ArgAction, command, value_parser};
 
-mod interpret;
-mod compile;
-mod code;
-mod io;
-mod jit;
-
-use code::tokenize_code;
-use interpret::interpret;
-use jit::jit;
-
+use bfuck::interpret::interpret;
+use bfuck::code::process_code;
+use bfuck::jit::jit;
 
 fn main() {
     let argv = command!()
@@ -74,7 +67,7 @@ fn main() {
             exit(1);
         },
     };
-    let token_stream = tokenize_code(&code);
+    let token_stream = process_code(&code).unwrap();
 
     // todo
     if interpret_flag {
