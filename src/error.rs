@@ -12,8 +12,8 @@ pub enum Error {
     UnmatchedOpenBr(usize, usize),
     /// Unmatched close bracket.
     UnmatchedCloseBr(usize, usize),
-    /// The current platform is not supported.
-    UnsupportedPlatform,
+    /// The current platform is not supported for JIT-compilation, use interpreter instead.
+    UnsupportedPlatformJIT,
     /// The target platform is not supported.
     UnsupportedTarget,
 }
@@ -22,7 +22,7 @@ impl Display for Error {
         match self {
             Error::UnmatchedOpenBr(row, col) => write!(f, "Unmatched '[' at line {}, column {}.", row, col),
             Error::UnmatchedCloseBr(row, col) => write!(f, "Unmatched ']' at line {}, column {}.", row, col),
-            Error::UnsupportedPlatform => write!(f, "The current platform is not supported."),
+            Error::UnsupportedPlatformJIT => write!(f, "The current platform is not supported for JIT-compilation, use interpreter instead."),
             Error::UnsupportedTarget => write!(f, "The target platform is not supported."),
         }
     }

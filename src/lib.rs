@@ -14,4 +14,10 @@ pub use code::*;
 pub use error::*;
 
 #[doc(inline)]
+pub use interpret::*;
+
+#[doc(inline)]
 pub use io::*;
+
+#[doc(inline)]
+pub use jit::*;

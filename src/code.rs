@@ -1,18 +1,18 @@
-//! Process brainfuck code.
+//! Process Brainfuck code.
 
 
 
-use crate::Error;
+use crate::error::Error;
 
 
 
-/// The array size used in the brainfuck program.
+/// The array size used in the Brainfuck program.
 pub const STORAGE_SIZE: usize = 30_000;
 
-/// The processed brainfuck code.
+/// The processed Brainfuck code.
 pub type TokenStream = Vec<Token>;
 
-/// The enum representing a parsed brainfuck command.
+/// The enum representing a parsed Brainfuck command.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Token {
     /// *Addition*
@@ -58,7 +58,7 @@ pub enum Token {
 
 
 
-/// Process raw brainfuck code into token stream.
+/// Process raw Brainfuck code into token stream.
 /// # Arguments
 /// `code` - A string slice that holds the Brainfuck code.
 /// # Returns

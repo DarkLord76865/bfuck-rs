@@ -13,7 +13,7 @@ fn main() {
         .next_line_help(true)
         .arg(Arg::new("src_file")
             .value_name("SRC_FILE")
-            .help("The brainfuck file.")
+            .help("The Brainfuck file.")
             .required(true)
             .value_parser(value_parser!(PathBuf)))
         .arg(Arg::new("interpret")
@@ -55,9 +55,9 @@ fn main() {
         interpret_flag = true;
     }
     
-    let mut dst_file = Path::new("");
+    let mut _dst_file = Path::new("");
     if compile_flag {
-        dst_file = Path::new(argv.get_one::<PathBuf>("dst_file").unwrap().to_str().unwrap());
+        _dst_file = Path::new(argv.get_one::<PathBuf>("dst_file").unwrap().to_str().unwrap());
     }
 
     let code = match fs::read_to_string(src_file) {
@@ -73,6 +73,9 @@ fn main() {
     if interpret_flag {
         interpret(token_stream);
     } else if jit_flag {
-        jit(token_stream);
+        if let Err(err) = jit(token_stream) {
+            eprintln!("{}", err);
+            exit(1);
+        }
     }
 }

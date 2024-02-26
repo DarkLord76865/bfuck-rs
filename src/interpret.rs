@@ -1,6 +1,33 @@
-use crate::io::{getchar, putchar};
-use crate::code::{Token, TokenStream, STORAGE_SIZE};
+//! The Brainfuck interpreter.
 
+
+
+use crate::code::{Token, TokenStream, STORAGE_SIZE};
+use crate::io::{getchar, putchar};
+
+
+
+/// Interpret given token stream.
+/// # Arguments
+/// * token_stream - The [TokenStream] to interpret.
+/// # Example
+/// ```
+/// use bfuck::{process_code, interpret};
+///
+/// // brainfuck code that prints "Brainfuck"
+/// let bf_code = "
+/// >++++++[<+++++++++++>-]>+++++++[<+++++++
+/// +++++++>-]<->>+++++++++[<+++++++++++>-]>
+/// ++++++++[<+++++++++++++>-]<-->>+++++++++
+/// +[<+++++++++++>-]<----->>++++++++[<+++++
+/// ++++++++>-]<+++>>++++++++++[<+++++++++++
+/// >-]>++++++++++[<++++++++++++>-]<------>>
+/// +++++++++[<+++++++++++++>-]<<<<<<<<<.>>>
+/// >>>>.<<<<<<.>>>.>>.<<<.>>>>>.<<<<<<.>>>.
+/// ";
+///
+/// interpret(process_code(bf_code).unwrap());
+/// ```
 pub fn interpret(token_stream: TokenStream) {
     let mut ins_ptr = 0;
     let mut data_ptr = 0;
