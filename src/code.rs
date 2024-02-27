@@ -69,7 +69,7 @@ pub enum Token {
 /// * `UnmatchedCloseBr(usize, usize)` - There is an unmatched close bracket at the given line and column.
 /// # Example
 /// ```
-/// use bfuck::{process_code, STORAGE_SIZE, Token};
+/// use bfuck::code::{process_code, STORAGE_SIZE, Token};
 ///
 /// let code = "<<--[-[>++<,.-]]";
 /// let tokens = process_code(code).unwrap();

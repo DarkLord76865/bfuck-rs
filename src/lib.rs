@@ -4,20 +4,18 @@ pub mod error;
 pub mod interpret;
 pub mod io;
 pub mod jit;
+pub mod text;
 
 
 
 #[doc(inline)]
-pub use code::*;
+pub use code::process_code;
 
 #[doc(inline)]
-pub use error::*;
+pub use error::Error;
 
 #[doc(inline)]
-pub use interpret::*;
+pub use interpret::interpret;
 
 #[doc(inline)]
-pub use io::*;
-
-#[doc(inline)]
-pub use jit::*;
+pub use jit::jit;

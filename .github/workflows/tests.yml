@@ -38,14 +38,3 @@ jobs:
 
       - name: Lint
         run: cargo clippy --all-features -- -D warnings
-
-  python:
-    name: Python
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        name: Checkout repository
-
-      - uses: chartboost/ruff-action@v1
-        name: Run Ruff
