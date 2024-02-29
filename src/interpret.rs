@@ -56,6 +56,7 @@ pub fn interpret(token_stream: TokenStream) {
                     ins_ptr -= jmp;
                 }
             },
+            Token::ClearCell => storage[data_ptr] = 0,
         }
         ins_ptr += 1;
     }

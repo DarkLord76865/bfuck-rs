@@ -223,6 +223,18 @@ pub fn jit(token_stream: TokenStream) -> Result<(), Error> {
                 // switch to the block after the loop (where next command will be)
                 builder.switch_to_block(after_block);
             },
+            Token::ClearCell => {
+                // load the data pointer value
+                let ptr_val = builder.use_var(data_ptr);
+                // calculate cell address (memory_address + data_ptr)
+                let cell_address = builder.ins().iadd(memory_address, ptr_val);
+                
+                // create a constant zero value
+                let zero = builder.ins().iconst(types::I8, 0);
+
+                // store the zero value to the cell
+                builder.ins().store(mem_flags, zero, cell_address, 0);
+            },
         }
     }
 

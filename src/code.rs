@@ -58,6 +58,11 @@ pub enum Token {
     ///
     /// `usize` - The distance from the current position to the matching open bracket.
     CloseBr(usize),
+    
+    /// *Clear cell*
+    /// 
+    /// Clear (set to 0) the current cell in the array.
+    ClearCell,
 }
 
 
@@ -121,6 +126,9 @@ pub fn process_code(code: &str) -> Result<TokenStream, Error> {
 
     // check whether the loops are correct
     check_loops(&tokens_with_loc)?;
+    
+    // optimize clear cell instruction ([-])
+    clear_cell(&mut tokens_with_loc);
 
     // calculate the distances for the open and close brackets (used in interpreter for jumps)
     calculate_jumps(&mut tokens_with_loc);
@@ -197,12 +205,13 @@ fn check_loops(tokens: &[(Token, usize, usize)]) -> Result<(), Error> {
     }
 }
 
+/// Optimization - Calculate jumps.
 /// Calculate the distances for the open and close brackets (used in interpreter for jumps).
 /// # Arguments
 /// `tokens` - A mutable slice of tokens with their locations (line and column) in the original
 fn calculate_jumps(tokens: &mut [(Token, usize, usize)]) {
     let mut loop_stack = Vec::new();
-    
+
     for i in 0..tokens.len() {
         match tokens[i] {
             (Token::OpenBr(_), _, _) => loop_stack.push(i),
@@ -217,6 +226,44 @@ fn calculate_jumps(tokens: &mut [(Token, usize, usize)]) {
     }
 }
 
+/// Optimization - Clear cell.
+/// Detects the pattern `[-]` and replaces it with `ClearCell`.
+/// Inside the loop there can be any addition/subtraction, cell still gets cleared, eventually.
+/// It doesn't matter if there is a loop around the clear cell, it will still be optimized.
+fn clear_cell(tokens: &mut Vec<(Token, usize, usize)>) {
+    let mut i = tokens.len().saturating_sub(2);  // sub 2 to avoid out of bounds access (third sub is done at the start of the loop and is checked)
+    
+    while let Some(new_i) = i.checked_sub(1) {
+        i = new_i;
+
+        if let Token::OpenBr(_) = tokens[i].0 {
+            if let Token::Add(_) = tokens[i + 1].0 {
+                if let Token::CloseBr(_) = tokens[i + 2].0 {
+                    tokens[i].0 = Token::ClearCell;  // replace first token with ClearCell
+                    tokens.drain((i + 1)..=(i + 2));  // remove second and third tokens
+                    
+                    // check if there is a loop (or multiple loops) around the clear cell, if so, remove it
+                    while i != 0 && i != tokens.len() - 1 {
+                        match tokens[i - 1].0 {
+                            Token::OpenBr(_) => {
+                                match tokens[i + 1].0 {
+                                    Token::CloseBr(_) => {
+                                        i -= 1;  // move to the opening bracket position
+                                        tokens[i].0 = Token::ClearCell;  // set opening bracket as the ClearCell
+                                        tokens.drain((i + 1)..=(i + 2));  // remove old ClearCell and closing bracket
+                                    },
+                                    _ => break,
+                                }
+                            },
+                            _ => break,
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 
 #[cfg(test)]
@@ -224,7 +271,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tokenize_code() {
+    fn test_process_code() {
         //! Test the process_code function.
         
         let code = "++[>++<,.-]";
@@ -291,5 +338,119 @@ mod tests {
             (Token::CloseBr(1), 1, 3),
         ];
         assert_eq!(check_loops(&tokens), Err(Error::UnmatchedOpenBr(1, 1)));
+    }
+    
+    #[test]
+    fn test_calculate_jumps() {
+        //! Test the calculate_jumps function.
+        
+        let mut tokens = vec![
+            (Token::OpenBr(0), 1, 1),
+            (Token::OpenBr(0), 1, 2),
+            (Token::OpenBr(0), 1, 3),
+            (Token::CloseBr(0), 1, 4),
+            (Token::CloseBr(0), 1, 5),
+            (Token::CloseBr(0), 1, 6),
+        ];
+        
+        calculate_jumps(&mut tokens);
+        
+        assert_eq!(tokens, vec![
+            (Token::OpenBr(5), 1, 1),
+            (Token::OpenBr(3), 1, 2),
+            (Token::OpenBr(1), 1, 3),
+            (Token::CloseBr(1), 1, 4),
+            (Token::CloseBr(3), 1, 5),
+            (Token::CloseBr(5), 1, 6),
+        ]);
+    }
+    
+    #[test]
+    fn test_clear_cell() {
+        //! Test the clear_cell function.
+        
+        // [-]
+        let mut tokens = vec![
+            (Token::OpenBr(2), 1, 1),
+            (Token::Add(u8::MAX), 1, 2),
+            (Token::CloseBr(2), 1, 3),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::ClearCell, 1, 1),
+        ]);
+
+        // [+]
+        let mut tokens = vec![
+            (Token::OpenBr(2), 1, 1),
+            (Token::Add(1), 1, 2),
+            (Token::CloseBr(2), 1, 3),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::ClearCell, 1, 1),
+        ]);
+
+        // [+++...+++]
+        let mut tokens = vec![
+            (Token::OpenBr(2), 1, 1),
+            (Token::Add(133), 1, 2),
+            (Token::CloseBr(2), 1, 3),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::ClearCell, 1, 1),
+        ]);
+
+        // [[[++]]]
+        let mut tokens = vec![
+            (Token::OpenBr(4), 1, 1),
+            (Token::OpenBr(2), 1, 2),
+            (Token::Add(2), 1, 3),
+            (Token::CloseBr(2), 1, 4),
+            (Token::CloseBr(4), 1, 5),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::ClearCell, 1, 1),
+        ]);
+        
+        // >[-]<[[-]]
+        let mut tokens = vec![
+            (Token::Mov(1), 1, 1),
+            (Token::OpenBr(2), 1, 2),
+            (Token::Add(u8::MAX), 1, 3),
+            (Token::CloseBr(2), 1, 4),
+            (Token::Mov(STORAGE_SIZE - 1), 1, 5),
+            (Token::OpenBr(4), 1, 6),
+            (Token::OpenBr(2), 1, 7),
+            (Token::Add(u8::MAX), 1, 8),
+            (Token::CloseBr(2), 1, 9),
+            (Token::CloseBr(4), 1, 10),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::Mov(1), 1, 1),
+            (Token::ClearCell, 1, 2),
+            (Token::Mov(STORAGE_SIZE - 1), 1, 5),
+            (Token::ClearCell, 1, 6),
+        ]);
+        
+        // [[[+]]]-
+        let mut tokens = vec![
+            (Token::OpenBr(6), 1, 1),
+            (Token::OpenBr(4), 1, 2),
+            (Token::OpenBr(2), 1, 3),
+            (Token::Add(1), 1, 4),
+            (Token::CloseBr(2), 1, 5),
+            (Token::CloseBr(4), 1, 6),
+            (Token::CloseBr(6), 1, 7),
+            (Token::Add(u8::MAX), 1, 8),
+        ];
+        clear_cell(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::ClearCell, 1, 1),
+            (Token::Add(u8::MAX), 1, 8),
+        ]);
     }
 }
