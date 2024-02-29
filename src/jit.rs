@@ -177,7 +177,7 @@ pub fn jit(token_stream: TokenStream) -> Result<(), Error> {
                 // call the write function (putchar) with the value from the cell
                 builder.ins().call_indirect(write_sig, write_address, &[cell_value]);
             },
-            Token::OpenBr => {
+            Token::OpenBr(_) => {
                 // create two new blocks - one for the loop body and one for the code after the loop
                 let inner_block = builder.create_block();
                 let after_block = builder.create_block();
@@ -200,7 +200,7 @@ pub fn jit(token_stream: TokenStream) -> Result<(), Error> {
                 // push the loop blocks to the stack
                 stack.push((inner_block, after_block));
             },
-            Token::CloseBr => {
+            Token::CloseBr(_) => {
                 // get the loop blocks from the stack (guaranteed to be there because loops are checked for correctness in the parser)
                 let (inner_block, after_block) = stack.pop().unwrap();
 

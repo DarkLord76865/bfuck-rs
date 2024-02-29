@@ -48,12 +48,16 @@ pub enum Token {
     /// *Open bracket*
     /// 
     /// The start of the loop.
-    OpenBr,
+    /// 
+    /// `usize` - The distance from the current position to the matching close bracket.
+    OpenBr(usize),
     
     /// *Close bracket*
     /// 
     /// The end of the loop.
-    CloseBr,
+    ///
+    /// `usize` - The distance from the current position to the matching open bracket.
+    CloseBr(usize),
 }
 
 
@@ -77,17 +81,17 @@ pub enum Token {
 /// assert_eq!(tokens, vec![
 ///     Token::Mov(STORAGE_SIZE - 2),
 ///     Token::Add(u8::MAX - 1),
-///     Token::OpenBr,
+///     Token::OpenBr(10),
 ///     Token::Add(u8::MAX),
-///     Token::OpenBr,
+///     Token::OpenBr(7),
 ///     Token::Mov(1),
 ///     Token::Add(2),
 ///     Token::Mov(STORAGE_SIZE - 1),
 ///     Token::Input,
 ///     Token::Output,
 ///     Token::Add(u8::MAX),
-///     Token::CloseBr,
-///     Token::CloseBr,
+///     Token::CloseBr(7),
+///     Token::CloseBr(10),
 /// ]);
 /// ```
 pub fn process_code(code: &str) -> Result<TokenStream, Error> {
@@ -105,8 +109,8 @@ pub fn process_code(code: &str) -> Result<TokenStream, Error> {
                 '>' => tokens_with_loc.push((Token::Mov(1), i + 1, j + 1)),
                 ',' => tokens_with_loc.push((Token::Input, i + 1, j + 1)),
                 '.' => tokens_with_loc.push((Token::Output, i + 1, j + 1)),
-                '[' => tokens_with_loc.push((Token::OpenBr, i + 1, j + 1)),
-                ']' => tokens_with_loc.push((Token::CloseBr, i + 1, j + 1)),
+                '[' => tokens_with_loc.push((Token::OpenBr(0), i + 1, j + 1)),  // set distance to 0 (calculated at the end)
+                ']' => tokens_with_loc.push((Token::CloseBr(0), i + 1, j + 1)),  // set distance to 0 (calculated at the end)
                 _ => {},  // Ignore all other characters (comments, etc.)
             }
         }
@@ -117,6 +121,9 @@ pub fn process_code(code: &str) -> Result<TokenStream, Error> {
 
     // check whether the loops are correct
     check_loops(&tokens_with_loc)?;
+
+    // calculate the distances for the open and close brackets (used in interpreter for jumps)
+    calculate_jumps(&mut tokens_with_loc);
 
     // remove location information and return the token stream
     Ok(tokens_with_loc.into_iter().map(|(token, _, _)| token).collect())
@@ -176,8 +183,8 @@ fn check_loops(tokens: &[(Token, usize, usize)]) -> Result<(), Error> {
 
     for (token, row, col) in tokens.iter() {
         match token {
-            Token::OpenBr => loop_stack.push((*row, *col)),
-            Token::CloseBr => if loop_stack.pop().is_none() {
+            Token::OpenBr(_) => loop_stack.push((*row, *col)),
+            Token::CloseBr(_) => if loop_stack.pop().is_none() {
                 return Err(Error::UnmatchedCloseBr(*row, *col));
             }
             _ => {},
@@ -187,6 +194,26 @@ fn check_loops(tokens: &[(Token, usize, usize)]) -> Result<(), Error> {
     match loop_stack.pop() {
         Some((row, col)) => Err(Error::UnmatchedOpenBr(row, col)),
         None => Ok(()),
+    }
+}
+
+/// Calculate the distances for the open and close brackets (used in interpreter for jumps).
+/// # Arguments
+/// `tokens` - A mutable slice of tokens with their locations (line and column) in the original
+fn calculate_jumps(tokens: &mut [(Token, usize, usize)]) {
+    let mut loop_stack = Vec::new();
+    
+    for i in 0..tokens.len() {
+        match tokens[i] {
+            (Token::OpenBr(_), _, _) => loop_stack.push(i),
+            (Token::CloseBr(_), _, _) => {
+                let open_br = loop_stack.pop().unwrap();
+                let distance = i - open_br;
+                tokens[open_br].0 = Token::OpenBr(distance);
+                tokens[i].0 = Token::CloseBr(distance);
+            },
+            _ => (),
+        }
     }
 }
 
@@ -204,14 +231,14 @@ mod tests {
         let tokens = process_code(code).unwrap();
         assert_eq!(tokens, vec![
             Token::Add(2),
-            Token::OpenBr,
+            Token::OpenBr(7),
             Token::Mov(1),
             Token::Add(2),
             Token::Mov(STORAGE_SIZE - 1),
             Token::Input,
             Token::Output,
             Token::Add(u8::MAX),
-            Token::CloseBr,
+            Token::CloseBr(7),
         ]);
     }
 
@@ -242,26 +269,26 @@ mod tests {
         //! Test the check_loops function.
         
         let tokens = vec![
-            (Token::OpenBr, 1, 1),
-            (Token::CloseBr, 1, 2),
-            (Token::OpenBr, 1, 3),
-            (Token::OpenBr, 1, 4),
-            (Token::CloseBr, 1, 5),
-            (Token::CloseBr, 1, 6),
+            (Token::OpenBr(1), 1, 1),
+            (Token::CloseBr(1), 1, 2),
+            (Token::OpenBr(3), 1, 3),
+            (Token::OpenBr(1), 1, 4),
+            (Token::CloseBr(1), 1, 5),
+            (Token::CloseBr(3), 1, 6),
         ];
         assert_eq!(check_loops(&tokens), Ok(()));
 
         let tokens = vec![
-            (Token::OpenBr, 1, 1),
-            (Token::CloseBr, 1, 2),
-            (Token::CloseBr, 1, 3),
+            (Token::OpenBr(1), 1, 1),
+            (Token::CloseBr(1), 1, 2),
+            (Token::CloseBr(0), 1, 3),
         ];
         assert_eq!(check_loops(&tokens), Err(Error::UnmatchedCloseBr(1, 3)));
 
         let tokens = vec![
-            (Token::OpenBr, 1, 1),
-            (Token::OpenBr, 1, 2),
-            (Token::CloseBr, 1, 3),
+            (Token::OpenBr(0), 1, 1),
+            (Token::OpenBr(1), 1, 2),
+            (Token::CloseBr(1), 1, 3),
         ];
         assert_eq!(check_loops(&tokens), Err(Error::UnmatchedOpenBr(1, 1)));
     }
