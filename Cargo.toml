@@ -12,10 +12,20 @@ categories = ["command-line-interface", "compilers"]
 include = [
     "/.cargo",
     "/src",
+    "/examples",
+    "/tests",
     "Cargo.toml",
     "LICENSE",
     "README.md",
 ]
+
+
+[profile.release]
+lto = true
+
+
+[profile.test]
+opt-level = 3
 
 
 [dependencies]
@@ -25,5 +35,6 @@ memmap2 = "0.9.4"
 target-lexicon = "0.12.14"
 
 
-[profile.release]
-lto = true
+[dev-dependencies]
+assert_cmd = "2.0.14"
+predicates = "3.1.0"
