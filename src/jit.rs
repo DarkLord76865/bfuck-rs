@@ -127,7 +127,7 @@ pub fn jit(token_stream: TokenStream) -> Result<(), Error> {
                 // store the new value back to the cell
                 builder.ins().store(mem_flags, cell_value, cell_address, 0);
             },
-            Token::Mov(n) => {
+            Token::Move(n) => {
                 // load the data pointer value
                 let ptr_val = builder.use_var(data_ptr);
 
@@ -234,6 +234,84 @@ pub fn jit(token_stream: TokenStream) -> Result<(), Error> {
 
                 // store the zero value to the cell
                 builder.ins().store(mem_flags, zero, cell_address, 0);
+            },
+            Token::AddTo(n) => {
+                // load the data pointer value
+                let ptr_val = builder.use_var(data_ptr);
+                
+                // calculate the pointer of the destination cell
+                // ptr_value + n
+                let ptr_plus = builder.ins().iadd_imm(ptr_val, n as i64);
+                // ptr_value + n - STORAGE_SIZE
+                let ptr_wrapped = builder.ins().iadd_imm(ptr_val, n as i64 - STORAGE_SIZE as i64);
+                // compare (ptr_value + n) with STORAGE_SIZE
+                let cmp = builder.ins().icmp_imm(IntCC::SignedLessThan, ptr_plus, STORAGE_SIZE as i64);
+                // select the correct value based on the condition
+                let new_loc = builder.ins().select(cmp, ptr_plus, ptr_wrapped);
+
+                // calculate the addresses of the original and new cells
+                let original_address = builder.ins().iadd(memory_address, ptr_val);
+                let new_address = builder.ins().iadd(memory_address, new_loc);
+
+                // load values from the original and new cells
+                let original_value = builder.ins().load(types::I8, mem_flags, original_address, 0);
+                let new_value = builder.ins().load(types::I8, mem_flags, new_address, 0);
+                
+                // add the original value to the new value
+                let new_value = builder.ins().iadd(new_value, original_value);
+
+                // store the new value back to its cell
+                builder.ins().store(mem_flags, new_value, new_address, 0);
+                
+                // zero the original cell
+                let zero = builder.ins().iconst(types::I8, 0);
+                builder.ins().store(mem_flags, zero, original_address, 0);
+            },
+            Token::AddToCopy(n1, n2) => {
+                // load the data pointer value
+                let ptr_val = builder.use_var(data_ptr);
+
+                // calculate the pointer of the destination cells
+                
+                // ptr_value + n1
+                let ptr_plus = builder.ins().iadd_imm(ptr_val, n1 as i64);
+                // ptr_value + n1 - STORAGE_SIZE
+                let ptr_wrapped = builder.ins().iadd_imm(ptr_val, n1 as i64 - STORAGE_SIZE as i64);
+                // compare (ptr_value + n1) with STORAGE_SIZE
+                let cmp = builder.ins().icmp_imm(IntCC::SignedLessThan, ptr_plus, STORAGE_SIZE as i64);
+                // select the correct value based on the condition
+                let new_loc_1 = builder.ins().select(cmp, ptr_plus, ptr_wrapped);
+                
+                // ptr_value + n2
+                let ptr_plus = builder.ins().iadd_imm(ptr_val, n2 as i64);
+                // ptr_value + n2 - STORAGE_SIZE
+                let ptr_wrapped = builder.ins().iadd_imm(ptr_val, n2 as i64 - STORAGE_SIZE as i64);
+                // compare (ptr_value + n2) with STORAGE_SIZE
+                let cmp = builder.ins().icmp_imm(IntCC::SignedLessThan, ptr_plus, STORAGE_SIZE as i64);
+                // select the correct value based on the condition
+                let new_loc_2 = builder.ins().select(cmp, ptr_plus, ptr_wrapped);
+
+                // calculate the addresses of the original and new cells
+                let original_address = builder.ins().iadd(memory_address, ptr_val);
+                let new_address_1 = builder.ins().iadd(memory_address, new_loc_1);
+                let new_address_2 = builder.ins().iadd(memory_address, new_loc_2);
+                
+                // load values from the original and new cells
+                let original_value = builder.ins().load(types::I8, mem_flags, original_address, 0);
+                let new_value_1 = builder.ins().load(types::I8, mem_flags, new_address_1, 0);
+                let new_value_2 = builder.ins().load(types::I8, mem_flags, new_address_2, 0);
+
+                // add the original value to the new values
+                let new_value_1 = builder.ins().iadd(new_value_1, original_value);
+                let new_value_2 = builder.ins().iadd(new_value_2, original_value);
+
+                // store the new values back to their cells
+                builder.ins().store(mem_flags, new_value_1, new_address_1, 0);
+                builder.ins().store(mem_flags, new_value_2, new_address_2, 0);
+
+                // zero the original cell
+                let zero = builder.ins().iconst(types::I8, 0);
+                builder.ins().store(mem_flags, zero, original_address, 0);
             },
         }
     }

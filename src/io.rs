@@ -11,7 +11,20 @@ use std::slice;
 pub extern "C" fn getchar() -> u8 {
     io::stdout().flush().unwrap();  // flush the output buffer before reading input
     let mut read_char = 0;
-    io::stdin().lock().read_exact(slice::from_mut(&mut read_char)).expect("Error while reading input!");
+
+    loop {
+        if let Err(err_kind) = io::stdin().lock().read_exact(slice::from_mut(&mut read_char)).map_err(|e| e.kind()) {
+            if err_kind == io::ErrorKind::UnexpectedEof {
+                read_char = 0;
+            } else {
+                eprintln!("Error while reading input: {}", err_kind);
+            }
+        };
+        if read_char != b'\r' {
+            break;
+        }
+    }
+
     read_char
 }
 
@@ -19,5 +32,7 @@ pub extern "C" fn getchar() -> u8 {
 /// # Arguments
 /// * `byte` - The byte to be written to the standard output.
 pub extern "C" fn putchar(byte: u8) {
-    io::stdout().write_all(&[byte]).unwrap();
+    if byte < 128 {
+        io::stdout().write_all(&[byte]).unwrap();
+    }
 }

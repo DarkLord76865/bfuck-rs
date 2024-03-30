@@ -33,7 +33,7 @@ pub enum Token {
     /// Moves past `0` wrap to `STORAGE_SIZE - 1`, and moves past `STORAGE_SIZE - 1` wrap to `0`.
     ///
     /// Adjacent moves are merged.
-    Mov(usize),
+    Move(usize),
 
     /// *Input*
     ///
@@ -63,6 +63,24 @@ pub enum Token {
     /// 
     /// Clear (set to 0) the current cell in the array.
     ClearCell,
+
+    /// *Add to*
+    ///
+    /// Add the value of the current cell to the cell at the given distance.
+    /// Negative direction is represented the same as in [Token::Move].
+    ///
+    /// The current cell is set to 0.
+    AddTo(usize),
+
+    /// *Add to copy*
+    ///
+    /// Add the value of the current cell to the cells at the given distances.
+    /// Negative direction is represented the same as in [Token::Move].
+    ///
+    /// The same as [Token::AddTo], but adds to 2 cells.
+    ///
+    /// The current cell is set to 0.
+    AddToCopy(usize, usize),
 }
 
 
@@ -84,14 +102,14 @@ pub enum Token {
 /// let tokens = process_code(code).unwrap();
 ///
 /// assert_eq!(tokens, vec![
-///     Token::Mov(STORAGE_SIZE - 2),
+///     Token::Move(STORAGE_SIZE - 2),
 ///     Token::Add(u8::MAX - 1),
 ///     Token::OpenBr(10),
 ///     Token::Add(u8::MAX),
 ///     Token::OpenBr(7),
-///     Token::Mov(1),
+///     Token::Move(1),
 ///     Token::Add(2),
-///     Token::Mov(STORAGE_SIZE - 1),
+///     Token::Move(STORAGE_SIZE - 1),
 ///     Token::Input,
 ///     Token::Output,
 ///     Token::Add(u8::MAX),
@@ -110,8 +128,8 @@ pub fn process_code(code: &str) -> Result<TokenStream, Error> {
             match character {
                 '+' => tokens_with_loc.push((Token::Add(1), i + 1, j + 1)),
                 '-' => tokens_with_loc.push((Token::Add(u8::MAX), i + 1, j + 1)),
-                '<' => tokens_with_loc.push((Token::Mov(STORAGE_SIZE - 1), i + 1, j + 1)),
-                '>' => tokens_with_loc.push((Token::Mov(1), i + 1, j + 1)),
+                '<' => tokens_with_loc.push((Token::Move(STORAGE_SIZE - 1), i + 1, j + 1)),
+                '>' => tokens_with_loc.push((Token::Move(1), i + 1, j + 1)),
                 ',' => tokens_with_loc.push((Token::Input, i + 1, j + 1)),
                 '.' => tokens_with_loc.push((Token::Output, i + 1, j + 1)),
                 '[' => tokens_with_loc.push((Token::OpenBr(0), i + 1, j + 1)),  // set distance to 0 (calculated at the end)
@@ -129,6 +147,12 @@ pub fn process_code(code: &str) -> Result<TokenStream, Error> {
     
     // optimize clear cell instruction ([-])
     clear_cell(&mut tokens_with_loc);
+
+    // optimize add to instruction ([->>+<<])
+    add_to(&mut tokens_with_loc);
+    
+    // optimize add to copy instruction ([->>+>+<<<])
+    add_to_copy(&mut tokens_with_loc);
 
     // calculate the distances for the open and close brackets (used in interpreter for jumps)
     calculate_jumps(&mut tokens_with_loc);
@@ -160,8 +184,8 @@ fn merge_adjacent(tokens: Vec<(Token, usize, usize)>) -> Vec<(Token, usize, usiz
                     optimized_tokens.push(token);
                 }
             },
-            Some((Token::Mov(n), _, _)) => {
-                if let Token::Mov(m) = token.0 {
+            Some((Token::Move(n), _, _)) => {
+                if let Token::Move(m) = token.0 {
                     *n = (*n + m) % STORAGE_SIZE;
                     if *n == 0 {
                         optimized_tokens.pop();
@@ -231,10 +255,12 @@ fn calculate_jumps(tokens: &mut [(Token, usize, usize)]) {
 /// Inside the loop there can be any addition/subtraction, cell still gets cleared, eventually.
 /// It doesn't matter if there is a loop around the clear cell, it will still be optimized.
 fn clear_cell(tokens: &mut Vec<(Token, usize, usize)>) {
-    let mut i = tokens.len().saturating_sub(2);  // sub 2 to avoid out of bounds access (third sub is done at the start of the loop and is checked)
-    
+    let mut i = tokens.len();
     while let Some(new_i) = i.checked_sub(1) {
         i = new_i;
+        if tokens.len() - i < 3 {
+            continue;
+        }
 
         if let Token::OpenBr(_) = tokens[i].0 {
             if let Token::Add(_) = tokens[i + 1].0 {
@@ -264,6 +290,104 @@ fn clear_cell(tokens: &mut Vec<(Token, usize, usize)>) {
     }
 }
 
+/// Optimization - Add to.
+/// Detects the pattern like `[->>+<<]` and replaces it with `AddTo(2)`.
+/// It doesn't matter if there is a loop around the add to, it will still be optimized.
+fn add_to(tokens: &mut Vec<(Token, usize, usize)>) {
+    let mut i = tokens.len();
+    while let Some(new_i) = i.checked_sub(1) {
+        i = new_i;
+        if tokens.len() - i < 6 {
+            continue;
+        }
+
+        if let Token::OpenBr(_) = tokens[i].0 {
+            if let Token::Add(u8::MAX) = tokens[i + 1].0 {
+                if let Token::Move(m1) = tokens[i + 2].0 {
+                    if let Token::Add(1) = tokens[i + 3].0 {
+                        if let Token::Move(m2) = tokens[i + 4].0 {
+                            if let Token::CloseBr(_) = tokens[i + 5].0 {
+                                if (m1 + m2) % STORAGE_SIZE == 0 {
+                                    tokens[i].0 = Token::AddTo(m1);  // replace first token with AddTo()
+                                    tokens.drain((i + 1)..=(i + 5));  // remove other tokens
+
+                                    // check if there is a loop (or multiple loops) around the add to, if so, remove it
+                                    while i != 0 && i != tokens.len() - 1 {
+                                        match tokens[i - 1].0 {
+                                            Token::OpenBr(_) => {
+                                                match tokens[i + 1].0 {
+                                                    Token::CloseBr(_) => {
+                                                        i -= 1;  // move to the opening bracket position
+                                                        tokens[i].0 = tokens[i + 1].0;  // set opening bracket as the AddTo
+                                                        tokens.drain((i + 1)..=(i + 2));  // remove old AddTo and closing bracket
+                                                    },
+                                                    _ => break,
+                                                }
+                                            },
+                                            _ => break,
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Optimization - Add to copy.
+/// Detects the pattern like `[->>+>+<<<]` and replaces it with `AddToCopy(2, 3)`.
+/// It doesn't matter if there is a loop around the add to copy, it will still be optimized.
+fn add_to_copy(tokens: &mut Vec<(Token, usize, usize)>) {
+    let mut i = tokens.len();
+    while let Some(new_i) = i.checked_sub(1) {
+        i = new_i;
+        if tokens.len() - i < 8 {
+            continue;
+        }
+
+        if let Token::OpenBr(_) = tokens[i].0 {
+            if let Token::Add(u8::MAX) = tokens[i + 1].0 {
+                if let Token::Move(m1) = tokens[i + 2].0 {
+                    if let Token::Add(1) = tokens[i + 3].0 {
+                        if let Token::Move(m2) = tokens[i + 4].0 {
+                            if let Token::Add(1) = tokens[i + 5].0 {
+                                if let Token::Move(m3) = tokens[i + 6].0 {
+                                    if let Token::CloseBr(_) = tokens[i + 7].0 {
+                                        if ((m1 + m2) % STORAGE_SIZE + m3) % STORAGE_SIZE == 0 {
+                                            tokens[i].0 = Token::AddToCopy(m1, (m1 + m2) % STORAGE_SIZE);  // replace first token with AddToCopy()
+                                            tokens.drain((i + 1)..=(i + 7));  // remove other tokens
+
+                                            // check if there is a loop (or multiple loops) around the add to copy, if so, remove it
+                                            while i != 0 && i != tokens.len() - 1 {
+                                                match tokens[i - 1].0 {
+                                                    Token::OpenBr(_) => {
+                                                        match tokens[i + 1].0 {
+                                                            Token::CloseBr(_) => {
+                                                                i -= 1;  // move to the opening bracket position
+                                                                tokens[i].0 = tokens[i + 1].0;  // set opening bracket as the AddToCopy
+                                                                tokens.drain((i + 1)..=(i + 2));  // remove old AddToCopy and closing bracket
+                                                            },
+                                                            _ => break,
+                                                        }
+                                                    },
+                                                    _ => break,
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 
 #[cfg(test)]
@@ -279,9 +403,9 @@ mod tests {
         assert_eq!(tokens, vec![
             Token::Add(2),
             Token::OpenBr(7),
-            Token::Mov(1),
+            Token::Move(1),
             Token::Add(2),
-            Token::Mov(STORAGE_SIZE - 1),
+            Token::Move(STORAGE_SIZE - 1),
             Token::Input,
             Token::Output,
             Token::Add(u8::MAX),
@@ -296,18 +420,18 @@ mod tests {
         let tokens = vec![
             (Token::Add(1), 1, 1),
             (Token::Add(1), 1, 2),
-            (Token::Mov(1), 1, 3),
-            (Token::Mov(1), 1, 4),
+            (Token::Move(1), 1, 3),
+            (Token::Move(1), 1, 4),
             (Token::Add(1), 1, 5),
             (Token::Add(255), 1, 6),
-            (Token::Mov(1), 1, 7),
-            (Token::Mov(STORAGE_SIZE - 1), 1, 8),
+            (Token::Move(1), 1, 7),
+            (Token::Move(STORAGE_SIZE - 1), 1, 8),
         ];
         let optimized_tokens = merge_adjacent(tokens);
 
         assert_eq!(optimized_tokens, vec![
             (Token::Add(2), 1, 1),
-            (Token::Mov(2), 1, 3),
+            (Token::Move(2), 1, 3),
         ]);
     }
 
@@ -417,11 +541,11 @@ mod tests {
         
         // >[-]<[[-]]
         let mut tokens = vec![
-            (Token::Mov(1), 1, 1),
+            (Token::Move(1), 1, 1),
             (Token::OpenBr(2), 1, 2),
             (Token::Add(u8::MAX), 1, 3),
             (Token::CloseBr(2), 1, 4),
-            (Token::Mov(STORAGE_SIZE - 1), 1, 5),
+            (Token::Move(STORAGE_SIZE - 1), 1, 5),
             (Token::OpenBr(4), 1, 6),
             (Token::OpenBr(2), 1, 7),
             (Token::Add(u8::MAX), 1, 8),
@@ -430,9 +554,9 @@ mod tests {
         ];
         clear_cell(&mut tokens);
         assert_eq!(tokens, vec![
-            (Token::Mov(1), 1, 1),
+            (Token::Move(1), 1, 1),
             (Token::ClearCell, 1, 2),
-            (Token::Mov(STORAGE_SIZE - 1), 1, 5),
+            (Token::Move(STORAGE_SIZE - 1), 1, 5),
             (Token::ClearCell, 1, 6),
         ]);
         
@@ -451,6 +575,152 @@ mod tests {
         assert_eq!(tokens, vec![
             (Token::ClearCell, 1, 1),
             (Token::Add(u8::MAX), 1, 8),
+        ]);
+    }
+    
+    #[test]
+    fn test_add_to() {
+        //! Test the add_to function.
+        
+        // [->>+<<]
+        let mut tokens = vec![
+            (Token::OpenBr(5), 1, 1),
+            (Token::Add(u8::MAX), 1, 2),
+            (Token::Move(2), 1, 3),
+            (Token::Add(1), 1, 4),
+            (Token::Move(STORAGE_SIZE - 2), 1, 5),
+            (Token::CloseBr(5), 1, 6),
+        ];
+        add_to(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddTo(2), 1, 1),
+        ]);
+        
+        // [-<<<+>>>]
+        let mut tokens = vec![
+            (Token::OpenBr(5), 1, 1),
+            (Token::Add(u8::MAX), 1, 2),
+            (Token::Move(STORAGE_SIZE - 3), 1, 3),
+            (Token::Add(1), 1, 4),
+            (Token::Move(3), 1, 5),
+            (Token::CloseBr(5), 1, 6),
+        ];
+        add_to(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddTo(STORAGE_SIZE - 3), 1, 1),
+        ]);
+        
+        // [[[->>+<<]]]
+        let mut tokens = vec![
+            (Token::OpenBr(9), 1, 1),
+            (Token::OpenBr(7), 1, 2),
+            (Token::OpenBr(5), 1, 3),
+            (Token::Add(u8::MAX), 1, 4),
+            (Token::Move(2), 1, 5),
+            (Token::Add(1), 1, 6),
+            (Token::Move(STORAGE_SIZE - 2), 1, 7),
+            (Token::CloseBr(5), 1, 8),
+            (Token::CloseBr(7), 1, 9),
+            (Token::CloseBr(9), 1, 10),
+        ];
+        add_to(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddTo(2), 1, 1),
+        ]);
+        
+        // >[->>+<<]<
+        let mut tokens = vec![
+            (Token::Move(1), 1, 1),
+            (Token::OpenBr(5), 1, 2),
+            (Token::Add(u8::MAX), 1, 3),
+            (Token::Move(2), 1, 4),
+            (Token::Add(1), 1, 5),
+            (Token::Move(STORAGE_SIZE - 2), 1, 6),
+            (Token::CloseBr(5), 1, 7),
+            (Token::Move(STORAGE_SIZE - 1), 1, 8),
+        ];
+        add_to(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::Move(1), 1, 1),
+            (Token::AddTo(2), 1, 2),
+            (Token::Move(STORAGE_SIZE - 1), 1, 8),
+        ]);
+    }
+    
+    #[test]
+    fn test_add_to_copy() {
+        //! Test the add_to_copy function.
+        
+        // [->>+>+<<<]
+        let mut tokens = vec![
+            (Token::OpenBr(7), 1, 1),
+            (Token::Add(u8::MAX), 1, 2),
+            (Token::Move(2), 1, 3),
+            (Token::Add(1), 1, 4),
+            (Token::Move(1), 1, 5),
+            (Token::Add(1), 1, 6),
+            (Token::Move(STORAGE_SIZE - 3), 1, 7),
+            (Token::CloseBr(7), 1, 8),
+        ];
+        add_to_copy(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddToCopy(2, 3), 1, 1),
+        ]);
+        
+        // [-<<<+>>>>+<]
+        let mut tokens = vec![
+            (Token::OpenBr(7), 1, 1),
+            (Token::Add(u8::MAX), 1, 2),
+            (Token::Move(STORAGE_SIZE - 3), 1, 3),
+            (Token::Add(1), 1, 4),
+            (Token::Move(4), 1, 5),
+            (Token::Add(1), 1, 6),
+            (Token::Move(STORAGE_SIZE - 1), 1, 7),
+            (Token::CloseBr(7), 1, 8),
+        ];
+        add_to_copy(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddToCopy(STORAGE_SIZE - 3, 1), 1, 1),
+        ]);
+        
+        // [[[->>+>>+<<<<]]]
+        let mut tokens = vec![
+            (Token::OpenBr(11), 1, 1),
+            (Token::OpenBr(9), 1, 2),
+            (Token::OpenBr(7), 1, 3),
+            (Token::Add(u8::MAX), 1, 4),
+            (Token::Move(2), 1, 5),
+            (Token::Add(1), 1, 6),
+            (Token::Move(2), 1, 7),
+            (Token::Add(1), 1, 8),
+            (Token::Move(STORAGE_SIZE - 4), 1, 9),
+            (Token::CloseBr(7), 1, 10),
+            (Token::CloseBr(9), 1, 11),
+            (Token::CloseBr(11), 1, 12),
+        ];
+        add_to_copy(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::AddToCopy(2, 4), 1, 1),
+        ]);
+        
+        // >[->>>>>+>>>>>+<<<<<<<<<<]<
+        let mut tokens = vec![
+            (Token::Move(1), 1, 1),
+            (Token::OpenBr(7), 1, 2),
+            (Token::Add(u8::MAX), 1, 3),
+            (Token::Move(5), 1, 4),
+            (Token::Add(1), 1, 5),
+            (Token::Move(5), 1, 6),
+            (Token::Add(1), 1, 7),
+            (Token::Move(STORAGE_SIZE - 10), 1, 8),
+            (Token::CloseBr(7), 1, 9),
+            (Token::Move(STORAGE_SIZE - 1), 1, 10),
+        ];
+        add_to_copy(&mut tokens);
+        assert_eq!(tokens, vec![
+            (Token::Move(1), 1, 1),
+            (Token::AddToCopy(5, 10), 1, 2),
+            (Token::Move(STORAGE_SIZE - 1), 1, 10),
         ]);
     }
 }

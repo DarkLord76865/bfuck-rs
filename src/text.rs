@@ -67,12 +67,14 @@ fn text_2_bytes(text: &str) -> Result<Vec<u8>, Error> {
 
     for c in text.chars() {
         if c.is_ascii() {
-            bytes.push(c as u8);
-            if c == '\n' {
-                line += 1;
-                column = 1;
-            } else {
-                column += 1;
+            if c != '\r' {
+                bytes.push(c as u8);
+                if c == '\n' {
+                    line += 1;
+                    column = 1;
+                } else {
+                    column += 1;
+                }
             }
         } else {
             return Err(Error::NonASCIIChar(c, line, column))

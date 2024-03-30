@@ -40,7 +40,7 @@ pub fn interpret(token_stream: TokenStream) {
                 Token::Add(n) => {
                     *storage.get_unchecked_mut(data_ptr) = storage.get_unchecked(data_ptr).wrapping_add(n)
                 },
-                Token::Mov(n) => {
+                Token::Move(n) => {
                     data_ptr += n;
                     if data_ptr >= STORAGE_SIZE {
                         data_ptr -= STORAGE_SIZE;
@@ -66,6 +66,27 @@ pub fn interpret(token_stream: TokenStream) {
                 },
                 Token::ClearCell => {
                     *storage.get_unchecked_mut(data_ptr) = 0
+                },
+                Token::AddTo(n) => {
+                    let mut new_loc = data_ptr + n;
+                    if new_loc >= STORAGE_SIZE {
+                        new_loc -= STORAGE_SIZE;
+                    }
+                    *storage.get_unchecked_mut(new_loc) = storage.get_unchecked(data_ptr).wrapping_add(*storage.get_unchecked(new_loc));
+                    *storage.get_unchecked_mut(data_ptr) = 0;
+                },
+                Token::AddToCopy(n1, n2) => {
+                    let mut new_loc = data_ptr + n1;
+                    if new_loc >= STORAGE_SIZE {
+                        new_loc -= STORAGE_SIZE;
+                    }
+                    *storage.get_unchecked_mut(new_loc) = storage.get_unchecked(data_ptr).wrapping_add(*storage.get_unchecked(new_loc));
+                    new_loc = data_ptr + n2;
+                    if new_loc >= STORAGE_SIZE {
+                        new_loc -= STORAGE_SIZE;
+                    }
+                    *storage.get_unchecked_mut(new_loc) = storage.get_unchecked(data_ptr).wrapping_add(*storage.get_unchecked(new_loc));
+                    *storage.get_unchecked_mut(data_ptr) = 0;
                 },
             }
             ins_ptr += 1;
